@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Mutual Fund Overlap Analyzer</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet">
+    <style>
+        .search-container { max-width: 800px; margin: 0 auto; }
+        #heatmap-container { margin-top: 30px; text-align: center; }
+        #heatmap-img { max-width: 100%; height: auto; }
+        .select2-container--default .select2-selection--multiple {
+            min-height: 42px;
+        }
+        .loading { display: none; text-align: center; margin: 20px 0; }
+    </style>
+</head>
+<body>
+    <div class="container py-4">
+        <h1 class="text-center mb-4">Mutual Fund Overlap Analyzer</h1>
+        
+        <div class="search-container">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">Select Mutual Funds</h5>
+                    <select id="scheme-select" class="form-control" multiple="multiple"></select>
+                    <div class="d-grid gap-2 mt-3">
+                        <button id="compare-btn" class="btn btn-primary">Compare Selected Funds</button>
+                    </div>
+                </div>
+            </div>
+            
+            <div id="loading" class="loading">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <p>Calculating overlaps...</p>
+            </div>
+            
+            <div id="heatmap-container" class="card">
+                <div class="card-body">
+                    <h5 class="card-title">Portfolio Overlap Heatmap</h5>
+                    <div id="heatmap-img"></div>
+                </div>
+            </div>
+
+            <!-- Add this section after the heatmap container -->
+            <div id="expense-ratios" class="card mt-3" style="display: none;">
+                <div class="card-body">
+                    <h5 class="card-title">Expense Ratios</h5>
+                    <table class="table table-striped">
+                        <thead>
+                            <tr>
+                                <th>Scheme Name</th>
+                                <th>Expense Ratio (%)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="expense-ratio-table">
+                            <!-- Will be populated by JavaScript -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+    <script>
+        $(document).ready(function() {
+            // Initialize select2
+            $('#scheme-select').select2({
+                placeholder: "Search and select mutual funds...",
+                minimumInputLength: 1,
+                ajax: {
+                    url: '/search_schemes',
+                    dataType: 'json',
+                    delay: 250,
+                    data: function(params) {
+                        return { q: params.term };
+                    },
+                    processResults: function(data) {
+                        return {
+                            results: data.map(item => ({
+                                id: item.id,
+                                text: `${item.name} (ID: ${item.id})`
+                            }))
+                        };
+                    },
+                    cache: true
+                }
+            });
+            
+            // Compare button click handler
+            $('#compare-btn').click(function() {
+                const selected = $('#scheme-select').val();
+                if (!selected || selected.length < 2) {
+                    alert('Please select at least 2 mutual funds to compare');
+                    return;
+                }
+                
+                $('#loading').show();
+                $('#heatmap-img').html('');
+                
+                $.ajax({
+                    url: '/compare',
+                    method: 'POST',
+                    contentType: 'application/json',
+                    data: JSON.stringify({ scheme_ids: selected }),
+
+                    success: function(response) {
+                        $('#heatmap-img').html(
+                            `<img src="data:image/png;base64,${response.heatmap}" 
+                                  alt="Portfolio Overlap Heatmap" 
+                                  class="img-fluid">`
+                        );
+                        
+                        // Display expense ratios
+                        const tableBody = $('#expense-ratio-table').empty();
+                        response.scheme_names.forEach((name, index) => {
+                            const schemeId = $('#scheme-select').val()[index];
+                            const ratio = response.expense_ratios[schemeId];
+                            tableBody.append(
+                                `<tr>
+                                    <td>${name}</td>
+                                    <td>${ratio}</td>
+                                </tr>`
+                            );
+                        });
+                        $('#expense-ratios').show();
+                        $('#loading').hide();
+                    },
+                    
+                    error: function(xhr) {
+                        alert('Error: ' + (xhr.responseJSON?.error || 'Failed to compare funds'));
+                        $('#loading').hide();
+                    }
+                });
+            });
+        });
+    </script>
+</body>
+</html>
